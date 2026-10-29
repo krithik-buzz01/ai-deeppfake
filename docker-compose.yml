@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - verifai-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.backend
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongodb:27017/verifai_db
+      - REDIS_URL=redis://redis:6379
+      - AI_SERVICE_URL=http://ai-service:8000
+      - CLIENT_URL=http://localhost
+    depends_on:
+      - mongodb
+      - redis
+      - ai-service
+    volumes:
+      - vault-storage:/app/vault
+    restart: unless-stopped
+    networks:
+      - verifai-network
+
+  ai-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.ai-service
+    ports:
+      - "8000:8000"
+    environment:
+      - AI_PORT=8000
+      - TORCH_DEVICE=cpu
+    restart: unless-stopped
+    networks:
+      - verifai-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.backend
+    command: ["node", "dist/workers/index.js"]
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/verifai_db
+      - REDIS_URL=redis://redis:6379
+      - AI_SERVICE_URL=http://ai-service:8000
+      - RUN_WORKER_DIRECT=true
+    depends_on:
+      - mongodb
+      - redis
+      - ai-service
+    volumes:
+      - vault-storage:/app/vault
+    restart: unless-stopped
+    networks:
+      - verifai-network
+
+  mongodb:
+    image: mongo:7.0
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - verifai-network
+
+  redis:
+    image: redis:7.2-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - verifai-network
+
+volumes:
+  mongo-data:
+  redis-data:
+  vault-storage:
+
+networks:
+  verifai-network:
+    driver: bridge
